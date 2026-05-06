@@ -95,6 +95,11 @@ const MODULOS = [
     'Outro',
 ];
 
+// ===== FORMAS DE PAGAMENTO =====
+function togglePagamento() {
+    document.getElementById('form-pagamento').classList.toggle('visivel');
+}
+
 // ===== LINHAS DA TABELA =====
 function adicionarLinha(desc = '', horas = '', tecnologia = '', valorHora = '', valorFixo = '', total = 0) {
     linhaId++;
@@ -281,7 +286,7 @@ function coletarDados() {
         data: document.getElementById('campo-data').value,
         validade: document.getElementById('campo-validade').value,
         prazo: document.getElementById('campo-prazo').value,
-        pagamento: document.getElementById('campo-pagamento').value,
+        pagamento: Array.from(document.querySelectorAll('#campo-pagamento-wrap input:checked')).map(cb => cb.value),
         obs: document.getElementById('campo-obs').value,
         linhas, subtotal,
         desconto: descontoAplicado,
@@ -337,7 +342,7 @@ function novoOrcamento() {
     document.getElementById('campo-endereco').value = '';
     document.getElementById('campo-estado').value = '';
     document.getElementById('campo-prazo').value = '';
-    document.getElementById('campo-pagamento').value = '';
+    document.querySelectorAll('#campo-pagamento-wrap input').forEach(cb => cb.checked = false);
     document.getElementById('campo-obs').value = '';
     document.getElementById('display-rev').innerHTML = '';
     const hoje = new Date();
@@ -368,7 +373,10 @@ function editarOrcamento(id) {
     document.getElementById('campo-data').value = orc.data || '';
     document.getElementById('campo-validade').value = orc.validade || '';
     document.getElementById('campo-prazo').value = orc.prazo || '';
-    document.getElementById('campo-pagamento').value = orc.pagamento || '';
+    const pagamentoSalvo = Array.isArray(orc.pagamento) ? orc.pagamento : (orc.pagamento ? [orc.pagamento] : []);
+    document.querySelectorAll('#campo-pagamento-wrap input').forEach(cb => {
+        cb.checked = pagamentoSalvo.includes(cb.value);
+    });
     document.getElementById('campo-obs').value = orc.obs || '';
     document.getElementById('linhas-tbody').innerHTML = '';
     linhaId = 0;
@@ -543,18 +551,19 @@ function gerarPDF() {
     y = HEADER_H;
 
     // ── DADOS DO CLIENTE ──
-    const INFO_H = 28;
+    const campos = [
+        { label: 'CLIENTE', val: dados.cliente || '' },
+        { label: 'TIPO DE PROJETO', val: dados.obra || '' },
+        { label: 'LOCAL', val: [dados.endereco, dados.estado].filter(Boolean).join(', ') },
+        { label: 'DATA', val: dataFmt !== '—' ? dataFmt : '' },
+        { label: 'VÁLIDO ATÉ', val: validFmt !== '—' ? validFmt : '' },
+        { label: 'PAGAMENTO', val: Array.isArray(dados.pagamento) && dados.pagamento.length ? dados.pagamento.join(' · ') : '' },
+    ].filter(c => c.val && c.val.trim() !== '');
+
+    const campoRows = Math.ceil(campos.length / 3);
+    const INFO_H = campoRows <= 1 ? 16 : campoRows * 14 + 4;
     doc.setFillColor(...C_AZUL_FADE);
     doc.rect(0, y, PW, INFO_H, 'F');
-
-    const campos = [
-        { label: 'CLIENTE', val: dados.cliente || '—' },
-        { label: 'TIPO DE PROJETO', val: dados.obra || '—' },
-        { label: 'LOCAL', val: [dados.endereco, dados.estado].filter(Boolean).join(', ') || '—' },
-        { label: 'DATA', val: dataFmt },
-        { label: 'VÁLIDO ATÉ', val: validFmt },
-        { label: 'PAGAMENTO', val: dados.pagamento || '—' },
-    ];
 
     const colW = CW / 3;
     campos.forEach((c, i) => {

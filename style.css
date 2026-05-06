@@ -627,7 +627,48 @@ table tbody td select:focus {
   opacity: 0.8;
 }
 
-/* ACOES FINAIS */
+/* PAGAMENTO MÚLTIPLO */
+.pagamento-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.pag-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 7px 13px;
+  border-radius: 20px;
+  border: 1.5px solid var(--cinza-borda);
+  font-size: 13px;
+  color: var(--cinza-texto);
+  background: var(--branco);
+  transition: all 0.18s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.pag-check:hover {
+  border-color: var(--azul-claro);
+  color: var(--azul-meio);
+  background: var(--azul-fade);
+}
+
+.pag-check input[type="checkbox"] {
+  display: none;
+}
+
+.pag-check:has(input:checked) {
+  background: var(--azul-meio);
+  border-color: var(--azul-meio);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(26,79,168,0.25);
+}
+
+
 .acoes-finais {
   padding: 1.5rem 2rem;
   display: flex;

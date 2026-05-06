@@ -191,18 +191,18 @@
             </div>
             <div class="campo">
               <label>Condições de Pagamento</label>
-              <select id="campo-pagamento">
-                <option value="">Selecione...</option>
-                <option>50% entrada + 50% na entrega</option>
-                <option>30% entrada + 70% na entrega</option>
-                <option>PIX + Crédito</option>
-                <option>Parcelado em 2x</option>
-                <option>Parcelado em 3x</option>
-                <option>Parcelado em 6x</option>
-                <option>Mensal (por sprint)</option>
-                <option>À vista com desconto</option>
-                <option>A combinar</option>
-              </select>
+              <div class="pagamento-multi" id="campo-pagamento-wrap">
+                <label class="pag-check"><input type="checkbox" value="50% entrada + 50% na entrega"><span>50% entrada + 50% na entrega</span></label>
+                <label class="pag-check"><input type="checkbox" value="30% entrada + 70% na entrega"><span>30% entrada + 70% na entrega</span></label>
+                <label class="pag-check"><input type="checkbox" value="PIX"><span>PIX</span></label>
+                <label class="pag-check"><input type="checkbox" value="Cartão de Crédito"><span>Cartão de Crédito</span></label>
+                <label class="pag-check"><input type="checkbox" value="Parcelado em 2x"><span>Parcelado em 2x</span></label>
+                <label class="pag-check"><input type="checkbox" value="Parcelado em 3x"><span>Parcelado em 3x</span></label>
+                <label class="pag-check"><input type="checkbox" value="Parcelado em 6x"><span>Parcelado em 6x</span></label>
+                <label class="pag-check"><input type="checkbox" value="Mensal (por sprint)"><span>Mensal (por sprint)</span></label>
+                <label class="pag-check"><input type="checkbox" value="À vista com desconto"><span>À vista com desconto</span></label>
+                <label class="pag-check"><input type="checkbox" value="A combinar"><span>A combinar</span></label>
+              </div>
             </div>
           </div>
         </div>
