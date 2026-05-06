@@ -73,6 +73,7 @@ const MODULOS = [
     'Landing Page',
     'Hospedagem Site',
     'Hospedagem Sistema',
+    'Pacote Sistema + Site',
     'Integração Site + Sistema',
     'Configuração de Ambiente',
     'Módulo de Autenticação',
