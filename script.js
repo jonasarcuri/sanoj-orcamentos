@@ -1,6 +1,7 @@
 // ===== ESTADO =====
 let linhaId = 0;
 let orcamentoEditandoId = null;
+let clienteOrcamentoPendenteId = null;
 let descontoAplicado = 0;
 
 // ===== INICIALIZAÇÃO =====
@@ -13,6 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
     adicionarLinha();
     adicionarLinha();
     renderizarHistorico();
+    importarTrashLeads();
+    importarLeadsIniciais();
+    importarClientesAtivos();
+    importarContratosAtivos();
+    renderizarLeads();
+    renderizarClientes();
+    renderizarContratos();
     atualizarNumeroDisplay();
 });
 
@@ -23,6 +31,9 @@ function mudarAba(aba, btn) {
     document.getElementById('aba-' + aba).classList.add('ativo');
     btn.classList.add('ativo');
     if (aba === 'historico') renderizarHistorico();
+    if (aba === 'leads') renderizarLeads();
+    if (aba === 'clientes') renderizarClientes();
+    if (aba === 'contratos') renderizarContratos();
 }
 
 // ===== NUMERO DO ORCAMENTO =====
@@ -304,6 +315,7 @@ function salvarOrcamento() {
     const dados = coletarDados();
     if (!dados.cliente) { mostrarToast('Informe o nome do cliente.', 'erro'); return; }
     const hist = getHistorico();
+    let orcamentoSalvoId = orcamentoEditandoId;
 
     if (orcamentoEditandoId) {
         const idx = hist.findIndex(o => o.id === orcamentoEditandoId);
@@ -317,14 +329,20 @@ function salvarOrcamento() {
         }
     } else {
         const num = proximoNumero();
-        hist.push({ ...dados, id: Date.now(), numero: num, savedAt: new Date().toISOString(), revisao: null, revisoes: [] });
+        orcamentoSalvoId = Date.now();
+        hist.push({ ...dados, id: orcamentoSalvoId, numero: num, savedAt: new Date().toISOString(), revisao: null, revisoes: [] });
     }
 
     setHistorico(hist);
+    if (clienteOrcamentoPendenteId && orcamentoSalvoId) {
+        atrelarOrcamentoCliente(clienteOrcamentoPendenteId, orcamentoSalvoId);
+        clienteOrcamentoPendenteId = null;
+    }
     mostrarToast('Orçamento salvo com sucesso!', 'sucesso');
     orcamentoEditandoId = null;
     document.getElementById('display-rev').innerHTML = '';
     atualizarNumeroDisplay();
+    renderizarClientes();
 }
 
 function numeroRomano(n) {
@@ -337,6 +355,7 @@ function numeroRomano(n) {
 // ===== NOVO ORÇAMENTO =====
 function novoOrcamento() {
     orcamentoEditandoId = null;
+    clienteOrcamentoPendenteId = null;
     document.getElementById('campo-cliente').value = '';
     document.getElementById('campo-obra').value = '';
     document.getElementById('campo-endereco').value = '';
@@ -447,6 +466,965 @@ function renderItemHistorico(o) {
         </div>
       </div>
     </div>`;
+}
+
+// ===== LEADS =====
+let filtroLeads = '';
+let filtroClientes = '';
+let filtroContratos = '';
+let leadEditandoId = null;
+const STATUS_LEADS = ['Novo', 'Em contato', 'Proposta enviada', 'Qualificado', 'Recusado'];
+const TIPOS_OPORTUNIDADE = [
+    'Clínica odontológica',
+    'Clínica médica',
+    'Loja de móveis',
+    'Arquiteto',
+    'Restaurante',
+    'Academia',
+    'Salão de beleza',
+    'Pet shop',
+    'Escritório contábil',
+    'Imobiliária',
+    'Loja de roupas',
+    'Oficina mecânica',
+];
+
+function getLeads() {
+    try { return JSON.parse(localStorage.getItem('sanoj_leads') || '[]'); } catch { return []; }
+}
+
+function setLeads(leads) {
+    localStorage.setItem('sanoj_leads', JSON.stringify(leads));
+}
+
+function getTrashLeads() {
+    try { return JSON.parse(localStorage.getItem('sanoj_trash_leads') || '[]'); } catch { return []; }
+}
+
+function setTrashLeads(leads) {
+    localStorage.setItem('sanoj_trash_leads', JSON.stringify(leads));
+}
+
+function getServicosClientes() {
+    try { return JSON.parse(localStorage.getItem('sanoj_servicos_clientes') || '{}'); } catch { return {}; }
+}
+
+function setServicosClientes(servicos) {
+    localStorage.setItem('sanoj_servicos_clientes', JSON.stringify(servicos));
+}
+
+function getContratosClientes() {
+    try { return JSON.parse(localStorage.getItem('sanoj_contratos_clientes') || '[]'); } catch { return []; }
+}
+
+function setContratosClientes(contratos) {
+    localStorage.setItem('sanoj_contratos_clientes', JSON.stringify(contratos));
+}
+
+function importarContratosAtivos() {
+    const contratosAtivos = Array.isArray(window.CONTRACTS_ACTIVE) ? window.CONTRACTS_ACTIVE : [];
+    if (contratosAtivos.length === 0) return;
+
+    const contratos = getContratosClientes();
+    const ids = new Set(contratos.map(contrato => String(contrato.id)));
+    let importou = false;
+
+    contratosAtivos.forEach((contrato, index) => {
+        const id = String(contrato.id || Date.now() + 12000 + index);
+        if (ids.has(id)) return;
+        contratos.push({
+            ...contrato,
+            id: contrato.id || Number(id),
+            createdAt: contrato.createdAt || new Date().toISOString()
+        });
+        ids.add(id);
+        importou = true;
+    });
+
+    if (importou) setContratosClientes(contratos);
+}
+
+function mudarSubmenuLeads(painel, btn) {
+    document.querySelectorAll('.lead-subtab').forEach(tab => tab.classList.remove('ativo'));
+    document.querySelectorAll('.lead-subpainel').forEach(el => el.classList.remove('ativo'));
+    document.getElementById('lead-painel-' + painel).classList.add('ativo');
+    btn.classList.add('ativo');
+    if (painel === 'excluidos') renderizarTrashLeads();
+}
+
+function gerarBuscasOportunidades() {
+    const tipoSelecionado = document.getElementById('opp-tipo').value;
+    const localidade = document.getElementById('opp-localidade').value.trim();
+    const dataInicio = document.getElementById('opp-data-inicio').value;
+    const dataFim = document.getElementById('opp-data-fim').value;
+    const cont = document.getElementById('oportunidades-resultados');
+
+    if (!localidade) {
+        mostrarToast('Informe a localidade para buscar oportunidades.', 'erro');
+        return;
+    }
+
+    const tipos = tipoSelecionado === 'todos' ? TIPOS_OPORTUNIDADE : [tipoSelecionado];
+    cont.innerHTML = tipos.map(tipo => renderBuscaOportunidade(tipo, localidade, dataInicio, dataFim)).join('');
+}
+
+function renderBuscaOportunidade(tipo, localidade, dataInicio, dataFim) {
+    const mapsQuery = `${tipo} em ${localidade}`;
+    const periodo = formatarPeriodoBusca(dataInicio, dataFim);
+    const aberturaQuery = [tipo, localidade, periodo, 'inauguração OR abriu OR abertura CNPJ'].filter(Boolean).join(' ');
+    const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapsQuery);
+    const googleUrl = 'https://www.google.com/search?q=' + encodeURIComponent(aberturaQuery);
+
+    return `
+    <div class="oportunidade-item">
+      <div>
+        <div class="oportunidade-titulo">${escapeHtml(tipo)}</div>
+        <div class="oportunidade-meta">${escapeHtml(localidade)}${periodo ? ' · ' + escapeHtml(periodo) : ''}</div>
+      </div>
+      <div class="oportunidade-acoes">
+        <a class="btn-mini ver" href="${mapsUrl}" target="_blank" rel="noopener">Google Maps</a>
+        <a class="btn-mini editar" href="${googleUrl}" target="_blank" rel="noopener">Data de abertura</a>
+      </div>
+    </div>`;
+}
+
+function formatarPeriodoBusca(inicio, fim) {
+    const partes = [];
+    if (inicio) partes.push('a partir de ' + new Date(inicio + 'T12:00:00').toLocaleDateString('pt-BR'));
+    if (fim) partes.push('até ' + new Date(fim + 'T12:00:00').toLocaleDateString('pt-BR'));
+    return partes.join(' ');
+}
+
+function limparBuscasOportunidades() {
+    document.getElementById('opp-tipo').value = 'todos';
+    document.getElementById('opp-localidade').value = '';
+    document.getElementById('opp-data-inicio').value = '';
+    document.getElementById('opp-data-fim').value = '';
+    document.getElementById('oportunidades-resultados').innerHTML = '';
+}
+
+function importarLeadsIniciais() {
+    const leadsIniciais = Array.isArray(window.ENTRY_LEADS) ? window.ENTRY_LEADS : [];
+    if (leadsIniciais.length === 0) return;
+
+    const leads = getLeads();
+    const trash = getTrashLeads();
+    const telefones = new Set([...leads, ...trash].map(lead => apenasDigitos(lead.contato)));
+    const agora = new Date().toISOString();
+    let importou = false;
+
+    leadsIniciais.forEach((lead, index) => {
+        const telefone = apenasDigitos(lead.contato);
+        if (!telefone || telefones.has(telefone)) return;
+
+        leads.push({
+            id: Date.now() + index,
+            nome: lead.nome,
+            contato: lead.contato,
+            email: '',
+            projeto: '',
+            ramo: lead.ramo,
+            dataAbordagem: lead.dataAbordagem,
+            cidade: lead.cidade,
+            estado: lead.estado,
+            status: ['Não', 'Nao'].includes(lead.resposta) ? 'Recusado' : 'Novo',
+            obs: `Resposta: ${lead.resposta}`,
+            createdAt: agora
+        });
+        telefones.add(telefone);
+        importou = true;
+    });
+
+    if (importou) setLeads(leads);
+}
+
+function importarClientesAtivos() {
+    const clientesAtivos = Array.isArray(window.CLIENT_ACTIVE) ? window.CLIENT_ACTIVE : [];
+    if (clientesAtivos.length === 0) return;
+
+    const leads = getLeads();
+    const servicos = getServicosClientes();
+    let alterouLeads = false;
+    let alterouServicos = false;
+
+    clientesAtivos.forEach((cliente, index) => {
+        const telefone = apenasDigitos(cliente.contato);
+        let lead = leads.find(item => {
+            const mesmoTelefone = telefone && apenasDigitos(item.contato) === telefone;
+            const mesmoNome = (item.nome || '').toLowerCase() === (cliente.nome || '').toLowerCase();
+            return mesmoTelefone || mesmoNome;
+        });
+
+        if (!lead) {
+            lead = {
+                id: Date.now() + 5000 + index,
+                nome: cliente.nome || 'Cliente ativo',
+                contato: cliente.contato || '',
+                email: cliente.email || '',
+                projeto: cliente.projeto || '',
+                ramo: cliente.ramo || '',
+                dataAbordagem: cliente.dataAbordagem || '',
+                cidade: cliente.cidade || '',
+                estado: cliente.estado || '',
+                status: 'Qualificado',
+                obs: cliente.obsLead || '',
+                createdAt: new Date().toISOString()
+            };
+            leads.push(lead);
+            alterouLeads = true;
+        } else if (normalizarStatusLead(lead.status) !== 'Qualificado') {
+            lead.status = 'Qualificado';
+            alterouLeads = true;
+        }
+
+        const servicoAtual = servicos[lead.id] || {};
+        servicos[lead.id] = {
+            ...servicoAtual,
+            orcamentoId: cliente.orcamentoId || servicoAtual.orcamentoId || '',
+            sistema: cliente.sistema || servicoAtual.sistema || '',
+            webpage: cliente.webpage || servicoAtual.webpage || '',
+            webpages: cliente.webpages || servicoAtual.webpages || (cliente.webpage ? [{ url: cliente.webpage }] : undefined),
+            dominios: cliente.dominios || servicoAtual.dominios || '',
+            dominiosLista: cliente.dominiosLista || servicoAtual.dominiosLista || undefined,
+            planos: cliente.planos || servicoAtual.planos || '',
+            planosLista: cliente.planosLista || servicoAtual.planosLista || undefined,
+            statusServico: cliente.statusServico || servicoAtual.statusServico || 'Planejamento',
+            obs: cliente.obs || servicoAtual.obs || '',
+            updatedAt: servicoAtual.updatedAt || new Date().toISOString()
+        };
+        alterouServicos = true;
+    });
+
+    if (alterouLeads) setLeads(leads);
+    if (alterouServicos) setServicosClientes(servicos);
+}
+
+function importarTrashLeads() {
+    const trashInicial = Array.isArray(window.TRASH_LEADS) ? window.TRASH_LEADS : [];
+    if (trashInicial.length === 0) return;
+
+    const trash = getTrashLeads();
+    const chaves = new Set(trash.map(lead => apenasDigitos(lead.contato) || String(lead.id || lead.nome)));
+    let importou = false;
+
+    trashInicial.forEach((lead, index) => {
+        const chave = apenasDigitos(lead.contato) || String(lead.id || lead.nome || index);
+        if (chaves.has(chave)) return;
+        trash.push({
+            ...lead,
+            id: lead.id || Date.now() + 9000 + index,
+            deletedAt: lead.deletedAt || new Date().toISOString()
+        });
+        chaves.add(chave);
+        importou = true;
+    });
+
+    if (importou) setTrashLeads(trash);
+}
+
+function abrirModalLead() {
+    leadEditandoId = null;
+    limparFormLead();
+    document.querySelector('#lead-modal-overlay h3').textContent = 'Novo Lead';
+    document.getElementById('lead-data-abordagem').value = new Date().toISOString().split('T')[0];
+    document.getElementById('lead-modal-overlay').classList.add('aberto');
+    setTimeout(() => document.getElementById('lead-nome').focus(), 50);
+}
+
+function fecharModalLead() {
+    document.getElementById('lead-modal-overlay').classList.remove('aberto');
+    leadEditandoId = null;
+}
+
+function salvarLead() {
+    const nome = document.getElementById('lead-nome').value.trim();
+    if (!nome) { mostrarToast('Informe o nome do lead.', 'erro'); return; }
+
+    const leads = getLeads();
+    const dados = {
+        nome,
+        contato: document.getElementById('lead-contato').value.trim(),
+        email: document.getElementById('lead-email').value.trim(),
+        projeto: document.getElementById('lead-projeto').value.trim(),
+        ramo: document.getElementById('lead-ramo').value.trim(),
+        dataAbordagem: document.getElementById('lead-data-abordagem').value,
+        cidade: document.getElementById('lead-cidade').value.trim(),
+        estado: document.getElementById('lead-estado').value.trim().toUpperCase(),
+        status: document.getElementById('lead-status').value,
+        obs: document.getElementById('lead-obs').value.trim(),
+    };
+
+    const estavaEditando = !!leadEditandoId;
+    if (leadEditandoId) {
+        const idx = leads.findIndex(lead => lead.id === leadEditandoId);
+        if (idx !== -1) {
+            leads[idx] = { ...leads[idx], ...dados, updatedAt: new Date().toISOString() };
+        }
+    } else {
+        leads.push({ id: Date.now(), ...dados, createdAt: new Date().toISOString() });
+    }
+
+    setLeads(leads);
+    limparFormLead();
+    fecharModalLead();
+    renderizarLeads();
+    renderizarClientes();
+    mostrarToast(estavaEditando ? 'Lead atualizado com sucesso!' : 'Lead salvo com sucesso!', 'sucesso');
+}
+
+function limparFormLead() {
+    ['lead-nome', 'lead-contato', 'lead-email', 'lead-projeto', 'lead-ramo', 'lead-data-abordagem', 'lead-cidade', 'lead-estado', 'lead-obs'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('lead-status').value = 'Novo';
+}
+
+function filtrarLeads(v) {
+    filtroLeads = v.toLowerCase();
+    renderizarLeads();
+}
+
+function renderizarLeads() {
+    const cont = document.getElementById('leads-conteudo');
+    if (!cont) return;
+
+    const leads = getLeads().slice().reverse();
+    const filtrados = filtroLeads
+        ? leads.filter(l =>
+            (l.nome || '').toLowerCase().includes(filtroLeads) ||
+            (l.contato || '').toLowerCase().includes(filtroLeads) ||
+            (l.email || '').toLowerCase().includes(filtroLeads) ||
+            (l.projeto || '').toLowerCase().includes(filtroLeads) ||
+            (l.ramo || '').toLowerCase().includes(filtroLeads) ||
+            (l.status || '').toLowerCase().includes(filtroLeads))
+        : leads;
+
+    cont.innerHTML = `<div class="kanban-leads">
+        ${STATUS_LEADS.map(status => renderColunaLead(status, filtrados)).join('')}
+    </div>`;
+}
+
+function renderColunaLead(status, leads) {
+    const itens = leads.filter(lead => normalizarStatusLead(lead.status) === status);
+    const vazio = `<div class="lead-coluna-vazia">Nenhum lead</div>`;
+
+    return `
+    <div class="lead-coluna" data-status="${escapeHtml(status)}" ondragover="permitirSoltarLead(event)" ondragleave="sairColunaLead(event)" ondrop="soltarLead(event, '${escapeHtml(status)}')">
+      <div class="lead-coluna-topo">
+        <span>${escapeHtml(status)}</span>
+        <strong>${itens.length}</strong>
+      </div>
+      <div class="lead-lista">
+        ${itens.length ? itens.map(renderItemLead).join('') : vazio}
+      </div>
+    </div>`;
+}
+
+function normalizarStatusLead(status) {
+    return STATUS_LEADS.includes(status) ? status : 'Novo';
+}
+
+function renderItemLead(lead) {
+    const dataFmt = lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('pt-BR') : '';
+    const abordagemFmt = lead.dataAbordagem ? new Date(lead.dataAbordagem + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+    const meta = [lead.projeto, lead.ramo, lead.cidade, lead.estado].filter(Boolean).join(' · ');
+    const telefone = formatarTelefoneLead(lead.contato || '');
+    const whatsappUrl = gerarWhatsappUrl(lead.contato || '');
+
+    return `
+    <div class="lead-item" draggable="true" ondragstart="iniciarArrastoLead(event, ${lead.id})" ondragend="finalizarArrastoLead(event)">
+      <div class="lead-item-info">
+        <div class="lead-item-nome">${escapeHtml(lead.nome || '(sem nome)')}</div>
+        <div class="lead-item-meta">${escapeHtml(meta)}</div>
+        <div class="lead-item-contato">${escapeHtml(telefone || 'Sem telefone informado')}</div>
+        ${lead.email ? `<div class="lead-item-contato">${escapeHtml(lead.email)}</div>` : ''}
+        ${abordagemFmt ? `<div class="lead-item-data">Abordagem: ${escapeHtml(abordagemFmt)}</div>` : ''}
+        ${dataFmt ? `<div class="lead-item-data">Cadastro: ${escapeHtml(dataFmt)}</div>` : ''}
+        ${lead.obs ? `<div class="lead-item-obs">${escapeHtml(lead.obs)}</div>` : ''}
+      </div>
+      <div class="lead-item-lado">
+        <div class="hist-item-acoes">
+          ${whatsappUrl ? `<a class="btn-mini whatsapp" href="${whatsappUrl}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+          <button class="btn-mini ver" onclick="usarLead(${lead.id})">Usar no orçamento</button>
+          <button class="btn-mini editar" onclick="editarLead(${lead.id})">Editar</button>
+          <button class="btn-mini excluir" onclick="excluirLead(${lead.id})">Excluir</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function editarLead(id) {
+    const lead = getLeads().find(item => item.id === id);
+    if (!lead) return;
+
+    leadEditandoId = id;
+    document.querySelector('#lead-modal-overlay h3').textContent = 'Editar Lead';
+    document.getElementById('lead-nome').value = lead.nome || '';
+    document.getElementById('lead-contato').value = lead.contato || '';
+    document.getElementById('lead-email').value = lead.email || '';
+    document.getElementById('lead-projeto').value = lead.projeto || '';
+    document.getElementById('lead-ramo').value = lead.ramo || '';
+    document.getElementById('lead-data-abordagem').value = lead.dataAbordagem || '';
+    document.getElementById('lead-cidade').value = lead.cidade || '';
+    document.getElementById('lead-estado').value = lead.estado || '';
+    document.getElementById('lead-status').value = normalizarStatusLead(lead.status);
+    document.getElementById('lead-obs').value = lead.obs || '';
+    document.getElementById('lead-modal-overlay').classList.add('aberto');
+    setTimeout(() => document.getElementById('lead-nome').focus(), 50);
+}
+
+function apenasDigitos(valor) {
+    return String(valor || '').replace(/\D/g, '');
+}
+
+function formatarTelefoneLead(valor) {
+    const digitos = apenasDigitos(valor);
+    if (!digitos) return '';
+    if (digitos.length === 11) return digitos.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+    if (digitos.length === 10) return digitos.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+    return valor;
+}
+
+function gerarWhatsappUrl(valor) {
+    let digitos = apenasDigitos(valor);
+    if (!digitos) return '';
+    if (digitos.length === 10 || digitos.length === 11) digitos = '55' + digitos;
+    return `https://wa.me/${digitos}`;
+}
+
+function iniciarArrastoLead(event, id) {
+    event.dataTransfer.setData('text/plain', String(id));
+    event.dataTransfer.effectAllowed = 'move';
+    event.currentTarget.classList.add('arrastando');
+}
+
+function finalizarArrastoLead(event) {
+    event.currentTarget.classList.remove('arrastando');
+    document.querySelectorAll('.lead-coluna.drag-over').forEach(col => col.classList.remove('drag-over'));
+}
+
+function permitirSoltarLead(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('drag-over');
+}
+
+function sairColunaLead(event) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+        event.currentTarget.classList.remove('drag-over');
+    }
+}
+
+function soltarLead(event, status) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drag-over');
+    const id = Number(event.dataTransfer.getData('text/plain'));
+    if (!id) return;
+    alterarStatusLead(id, status);
+}
+
+function alterarStatusLead(id, status) {
+    const leads = getLeads();
+    const lead = leads.find(l => l.id === id);
+    if (!lead) return;
+
+    lead.status = normalizarStatusLead(status);
+    setLeads(leads);
+    renderizarLeads();
+    renderizarClientes();
+    mostrarToast(`Lead movido para ${lead.status}.`, 'sucesso');
+}
+
+function usarLead(id) {
+    const lead = getLeads().find(l => l.id === id);
+    if (!lead) return;
+
+    document.getElementById('campo-cliente').value = lead.nome || '';
+    document.getElementById('campo-endereco').value = lead.cidade || '';
+    document.getElementById('campo-estado').value = lead.estado || '';
+    document.getElementById('campo-obs').value = lead.obs || '';
+
+    const campoObra = document.getElementById('campo-obra');
+    const opcao = Array.from(campoObra.options).find(opt =>
+        opt.textContent.toLowerCase() === (lead.projeto || '').toLowerCase()
+    );
+    campoObra.value = opcao ? opcao.value : (lead.projeto ? 'Outro' : '');
+
+    mudarAba('orcamento', document.querySelector('.nav-tab[onclick*="orcamento"]'));
+    mostrarToast('Lead selecionado para o orçamento.', 'sucesso');
+}
+
+function excluirLead(id) {
+    abrirModal('Excluir Lead', 'Deseja mover este lead para Leads Excluídos?', () => {
+        const leads = getLeads();
+        const lead = leads.find(l => l.id === id);
+        if (!lead) return;
+
+        const trash = getTrashLeads();
+        trash.unshift({
+            ...lead,
+            previousStatus: lead.status,
+            deletedAt: new Date().toISOString()
+        });
+
+        setTrashLeads(trash);
+        setLeads(leads.filter(l => l.id !== id));
+        renderizarLeads();
+        renderizarTrashLeads();
+        renderizarClientes();
+        mostrarToast('Lead movido para Leads Excluídos.', 'erro');
+    });
+}
+
+function renderizarTrashLeads() {
+    const cont = document.getElementById('trash-leads-conteudo');
+    if (!cont) return;
+
+    const trash = getTrashLeads();
+    if (trash.length === 0) {
+        cont.innerHTML = `<div class="hist-vazio"><p>Nenhum lead excluído.</p></div>`;
+        return;
+    }
+
+    cont.innerHTML = `<div class="trash-lista">${trash.map(renderTrashLead).join('')}</div>`;
+}
+
+function renderTrashLead(lead) {
+    const telefone = formatarTelefoneLead(lead.contato || '');
+    const deletedFmt = lead.deletedAt ? new Date(lead.deletedAt).toLocaleDateString('pt-BR') : '';
+
+    return `
+    <div class="trash-item">
+      <div>
+        <div class="lead-item-nome">${escapeHtml(lead.nome || '(sem nome)')}</div>
+        <div class="lead-item-meta">${escapeHtml([lead.ramo, lead.cidade, lead.estado].filter(Boolean).join(' · '))}</div>
+        ${telefone ? `<div class="lead-item-contato">${escapeHtml(telefone)}</div>` : ''}
+        ${deletedFmt ? `<div class="lead-item-data">Excluído em: ${escapeHtml(deletedFmt)}</div>` : ''}
+      </div>
+      <div class="hist-item-acoes">
+        <button class="btn-mini ver" onclick="restaurarLead(${lead.id})">Restaurar</button>
+      </div>
+    </div>`;
+}
+
+function restaurarLead(id) {
+    const trash = getTrashLeads();
+    const lead = trash.find(item => item.id === id);
+    if (!lead) return;
+
+    const restaurado = { ...lead, status: 'Em contato', restoredAt: new Date().toISOString() };
+    delete restaurado.deletedAt;
+    delete restaurado.previousStatus;
+
+    const leads = getLeads();
+    const telefone = apenasDigitos(restaurado.contato);
+    const jaExiste = leads.some(item => (telefone && apenasDigitos(item.contato) === telefone) || item.id === restaurado.id);
+    if (!jaExiste) leads.push(restaurado);
+
+    setLeads(leads);
+    setTrashLeads(trash.filter(item => item.id !== id));
+    renderizarLeads();
+    renderizarTrashLeads();
+    renderizarClientes();
+    mostrarToast('Lead restaurado para Em contato.', 'sucesso');
+}
+
+function exportarTrashLeadsJs() {
+    const conteudo = 'window.TRASH_LEADS = ' + JSON.stringify(getTrashLeads(), null, 2) + ';\n';
+    const blob = new Blob([conteudo], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'trash-leads.js';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    mostrarToast('Arquivo trash-leads.js gerado.', 'sucesso');
+}
+
+// ===== CLIENTES / SERVICOS =====
+function filtrarClientes(v) {
+    filtroClientes = v.toLowerCase();
+    renderizarClientes();
+}
+
+function renderizarClientes() {
+    const cont = document.getElementById('clientes-conteudo');
+    if (!cont) return;
+
+    const clientes = getLeads()
+        .filter(lead => normalizarStatusLead(lead.status) === 'Qualificado')
+        .filter(lead => {
+            if (!filtroClientes) return true;
+            return (lead.nome || '').toLowerCase().includes(filtroClientes) ||
+                (lead.ramo || '').toLowerCase().includes(filtroClientes) ||
+                (lead.cidade || '').toLowerCase().includes(filtroClientes);
+        });
+
+    if (clientes.length === 0) {
+        cont.innerHTML = `<div class="hist-vazio"><p>Nenhum cliente qualificado ainda.<br>Mova um lead para <strong>Qualificado</strong> no Kanban para acompanhar/monitorar os serviços e assinaturas.</p></div>`;
+        return;
+    }
+
+    cont.innerHTML = `<div class="clientes-grid">${clientes.map(renderClienteServico).join('')}</div>`;
+}
+
+function normalizarServicoCliente(dados = {}) {
+    const webpages = Array.isArray(dados.webpages)
+        ? dados.webpages
+        : (dados.webpage ? [{ url: dados.webpage }] : []);
+    const dominios = Array.isArray(dados.dominiosLista)
+        ? dados.dominiosLista
+        : (dados.dominios ? String(dados.dominios).split(',').map(dominio => ({ dominio: dominio.trim(), porta: '', vps: '' })).filter(item => item.dominio) : []);
+    const planos = Array.isArray(dados.planosLista)
+        ? dados.planosLista
+        : (dados.planos ? [{ nome: dados.planos, dataInicio: '', dataFim: '', valor: '', periodicidade: 'mensal', dataVencimento: '' }] : []);
+
+    return {
+        ...dados,
+        webpages: webpages.length ? webpages : [{ url: '' }],
+        dominiosLista: dominios.length ? dominios : [{ dominio: '', porta: '', vps: '' }],
+        planosLista: planos.length ? planos : [{ nome: '', dataInicio: '', dataFim: '', valor: '', periodicidade: 'mensal', dataVencimento: '' }],
+    };
+}
+
+function renderClienteServico(lead) {
+    const servicos = getServicosClientes();
+    const dados = normalizarServicoCliente(servicos[lead.id] || {});
+    const orcamentos = getHistorico();
+    const telefone = formatarTelefoneLead(lead.contato || '');
+    const whatsappUrl = gerarWhatsappUrl(lead.contato || '');
+    const primeiraWebpage = dados.webpages.find(item => item.url)?.url || '';
+
+    return `
+    <div class="cliente-card" id="cliente-card-${lead.id}">
+      <div class="cliente-card-topo">
+        <div>
+          <div class="cliente-nome">${escapeHtml(lead.nome || '(sem nome)')}</div>
+          <div class="cliente-meta">${escapeHtml([lead.ramo, lead.cidade, lead.estado].filter(Boolean).join(' · '))}</div>
+          ${telefone ? `<div class="cliente-contato-linha"><span class="cliente-meta">${escapeHtml(telefone)}</span>${whatsappUrl ? `<a class="btn-mini whatsapp" href="${whatsappUrl}" target="_blank" rel="noopener">WhatsApp</a>` : ''}</div>` : ''}
+        </div>
+        <span class="cliente-status">Qualificado</span>
+      </div>
+
+      <div class="cliente-servicos-form">
+        <div class="campo">
+          <label>Orcamento Atrelado</label>
+          <select id="cliente-orcamento-${lead.id}">
+            <option value="">Sem orcamento atrelado</option>
+            ${orcamentos.map(orc => `<option value="${orc.id}" ${String(dados.orcamentoId || '') === String(orc.id) ? 'selected' : ''}>#${String(orc.numero).padStart(3, '0')} - ${escapeHtml(orc.cliente || 'Sem cliente')} - ${formatarMoeda(orc.totalComDesconto || orc.subtotal || 0)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Sistema</label>
+          <input type="text" id="cliente-sistema-${lead.id}" value="${escapeAttr(dados.sistema || '')}" placeholder="Ex.: CRM, ERP, portal, automacao">
+        </div>
+
+        <div class="cliente-campo-full cliente-lista-bloco">
+          <div class="cliente-lista-titulo">
+            <label>Webpages</label>
+            <button class="btn-mini ver" onclick="adicionarWebpageCliente(${lead.id})">+ Webpage</button>
+          </div>
+          ${dados.webpages.map((item, index) => renderWebpageCliente(lead.id, item, index, dados.webpages.length)).join('')}
+        </div>
+
+        <div class="cliente-campo-full cliente-lista-bloco">
+          <div class="cliente-lista-titulo">
+            <label>Domínios</label>
+            <button class="btn-mini ver" onclick="adicionarDominioCliente(${lead.id})">+ Domínio</button>
+          </div>
+          ${dados.dominiosLista.map((item, index) => renderDominioCliente(lead.id, item, index, dados.dominiosLista.length)).join('')}
+        </div>
+
+        <div class="cliente-campo-full cliente-lista-bloco">
+          <div class="cliente-lista-titulo">
+            <label>Planos</label>
+            <button class="btn-mini ver" onclick="adicionarPlanoCliente(${lead.id})">+ Plano</button>
+          </div>
+          ${dados.planosLista.map((item, index) => renderPlanoCliente(lead.id, item, index, dados.planosLista.length)).join('')}
+        </div>
+
+        <div class="campo">
+          <label>Status do Servico</label>
+          <select id="cliente-status-servico-${lead.id}">
+            ${['Planejamento', 'Em desenvolvimento', 'Publicado', 'Manutencao', 'Pausado'].map(status => `<option ${dados.statusServico === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo cliente-campo-full">
+          <label>Observacoes</label>
+          <textarea id="cliente-obs-${lead.id}" placeholder="Acessos, vencimentos, escopo, proximas acoes...">${escapeHtml(dados.obs || '')}</textarea>
+        </div>
+      </div>
+
+      <div class="cliente-card-acoes">
+        ${primeiraWebpage ? `<a class="btn-mini ver" href="${escapeAttr(primeiraWebpage)}" target="_blank" rel="noopener">Abrir webpage</a>` : ''}
+        <button class="btn-mini ver" onclick="criarOrcamentoCliente(${lead.id})">Criar Orçamento</button>
+        <button class="btn-mini ver" onclick="criarContratoCliente(${lead.id})">Criar Contrato</button>
+        <button class="btn-mini ver" onclick="verContratosCliente(${lead.id})">Ver Contratos</button>
+        <button class="btn-mini editar" onclick="salvarServicoCliente(${lead.id})">Salvar acompanhamento</button>
+      </div>
+    </div>`;
+}
+
+function renderWebpageCliente(leadId, item, index, total) {
+    return `
+    <div class="cliente-lista-item cliente-webpage-item">
+      <input type="url" class="cliente-webpage-url" value="${escapeAttr(item.url || '')}" placeholder="https://site.com.br">
+      <button class="btn-mini excluir" onclick="removerWebpageCliente(${leadId}, ${index})" ${total <= 1 ? 'disabled' : ''}>Remover</button>
+    </div>`;
+}
+
+function renderDominioCliente(leadId, item, index, total) {
+    return `
+    <div class="cliente-lista-item cliente-dominio-item">
+      <input type="text" class="cliente-dominio-nome" value="${escapeAttr(item.dominio || '')}" placeholder="dominio.com.br">
+      <input type="text" class="cliente-dominio-porta" value="${escapeAttr(item.porta || '')}" placeholder="Porta">
+      <input type="text" class="cliente-dominio-vps" value="${escapeAttr(item.vps || '')}" placeholder="VPS">
+      <button class="btn-mini excluir" onclick="removerDominioCliente(${leadId}, ${index})" ${total <= 1 ? 'disabled' : ''}>Remover</button>
+    </div>`;
+}
+
+function renderPlanoCliente(leadId, item, index, total) {
+    const periodicidade = item.periodicidade || 'mensal';
+    const exibirVencimento = periodicidade !== 'vitalicio';
+
+    return `
+    <div class="cliente-plano-item">
+      <div class="cliente-plano-grid">
+        <input type="text" class="cliente-plano-nome" value="${escapeAttr(item.nome || '')}" placeholder="Nome do plano">
+        <input type="date" class="cliente-plano-inicio" value="${escapeAttr(item.dataInicio || '')}" title="Data inicial">
+        <input type="date" class="cliente-plano-fim" value="${escapeAttr(item.dataFim || '')}" title="Data final">
+        <input type="number" class="cliente-plano-valor" value="${escapeAttr(item.valor || '')}" placeholder="Valor" min="0" step="0.01">
+        <div class="cliente-periodicidade">
+          <button class="cliente-periodicidade-btn ${periodicidade === 'mensal' ? 'ativo' : ''}" data-periodicidade="mensal" onclick="atualizarPeriodicidadePlano(${leadId}, ${index}, 'mensal')">Mensal</button>
+          <button class="cliente-periodicidade-btn ${periodicidade === 'anual' ? 'ativo' : ''}" data-periodicidade="anual" onclick="atualizarPeriodicidadePlano(${leadId}, ${index}, 'anual')">Anual</button>
+          <button class="cliente-periodicidade-btn ${periodicidade === 'vitalicio' ? 'ativo' : ''}" data-periodicidade="vitalicio" onclick="atualizarPeriodicidadePlano(${leadId}, ${index}, 'vitalicio')">Vitalício</button>
+        </div>
+        <input type="date" class="cliente-plano-vencimento ${exibirVencimento ? '' : 'oculto'}" value="${escapeAttr(item.dataVencimento || '')}" title="Data vencimento">
+        <button class="btn-mini excluir" onclick="removerPlanoCliente(${leadId}, ${index})" ${total <= 1 ? 'disabled' : ''}>Remover</button>
+      </div>
+    </div>`;
+}
+
+function coletarServicoCliente(leadId) {
+    const card = document.getElementById(`cliente-card-${leadId}`);
+    const servicoAtual = normalizarServicoCliente(getServicosClientes()[leadId] || {});
+    if (!card) return servicoAtual;
+
+    const webpages = Array.from(card.querySelectorAll('.cliente-webpage-item')).map(item => ({
+        url: item.querySelector('.cliente-webpage-url').value.trim()
+    }));
+    const dominiosLista = Array.from(card.querySelectorAll('.cliente-dominio-item')).map(item => ({
+        dominio: item.querySelector('.cliente-dominio-nome').value.trim(),
+        porta: item.querySelector('.cliente-dominio-porta').value.trim(),
+        vps: item.querySelector('.cliente-dominio-vps').value.trim()
+    }));
+    const planosLista = Array.from(card.querySelectorAll('.cliente-plano-item')).map(item => ({
+        nome: item.querySelector('.cliente-plano-nome').value.trim(),
+        dataInicio: item.querySelector('.cliente-plano-inicio').value,
+        dataFim: item.querySelector('.cliente-plano-fim').value,
+        valor: item.querySelector('.cliente-plano-valor').value,
+        periodicidade: item.querySelector('.cliente-periodicidade-btn.ativo')?.dataset.periodicidade || 'mensal',
+        dataVencimento: item.querySelector('.cliente-plano-vencimento').value
+    }));
+
+    return {
+        orcamentoId: document.getElementById(`cliente-orcamento-${leadId}`).value,
+        sistema: document.getElementById(`cliente-sistema-${leadId}`).value.trim(),
+        webpage: webpages.find(item => item.url)?.url || '',
+        webpages,
+        dominios: dominiosLista.map(item => item.dominio).filter(Boolean).join(', '),
+        dominiosLista,
+        planos: planosLista.map(item => item.nome).filter(Boolean).join(', '),
+        planosLista,
+        statusServico: document.getElementById(`cliente-status-servico-${leadId}`).value,
+        obs: document.getElementById(`cliente-obs-${leadId}`).value.trim(),
+        updatedAt: new Date().toISOString()
+    };
+}
+
+function salvarRascunhoServicoCliente(leadId) {
+    const servicos = getServicosClientes();
+    servicos[leadId] = coletarServicoCliente(leadId);
+    setServicosClientes(servicos);
+    return servicos[leadId];
+}
+
+function alterarListaServicoCliente(leadId, tipo, index = null, periodicidade = null) {
+    const servicos = getServicosClientes();
+    const dados = normalizarServicoCliente(salvarRascunhoServicoCliente(leadId));
+
+    if (tipo === 'add-webpage') dados.webpages.push({ url: '' });
+    if (tipo === 'remove-webpage') dados.webpages.splice(index, 1);
+    if (tipo === 'add-dominio') dados.dominiosLista.push({ dominio: '', porta: '', vps: '' });
+    if (tipo === 'remove-dominio') dados.dominiosLista.splice(index, 1);
+    if (tipo === 'add-plano') dados.planosLista.push({ nome: '', dataInicio: '', dataFim: '', valor: '', periodicidade: 'mensal', dataVencimento: '' });
+    if (tipo === 'remove-plano') dados.planosLista.splice(index, 1);
+    if (tipo === 'periodicidade-plano') {
+        dados.planosLista[index].periodicidade = periodicidade;
+        if (periodicidade === 'vitalicio') dados.planosLista[index].dataVencimento = '';
+    }
+
+    servicos[leadId] = normalizarServicoCliente(dados);
+    setServicosClientes(servicos);
+    renderizarClientes();
+}
+
+function adicionarWebpageCliente(leadId) { alterarListaServicoCliente(leadId, 'add-webpage'); }
+function removerWebpageCliente(leadId, index) { alterarListaServicoCliente(leadId, 'remove-webpage', index); }
+function adicionarDominioCliente(leadId) { alterarListaServicoCliente(leadId, 'add-dominio'); }
+function removerDominioCliente(leadId, index) { alterarListaServicoCliente(leadId, 'remove-dominio', index); }
+function adicionarPlanoCliente(leadId) { alterarListaServicoCliente(leadId, 'add-plano'); }
+function removerPlanoCliente(leadId, index) { alterarListaServicoCliente(leadId, 'remove-plano', index); }
+function atualizarPeriodicidadePlano(leadId, index, periodicidade) { alterarListaServicoCliente(leadId, 'periodicidade-plano', index, periodicidade); }
+
+function salvarServicoCliente(leadId) {
+    const servicos = getServicosClientes();
+    servicos[leadId] = coletarServicoCliente(leadId);
+    setServicosClientes(servicos);
+    renderizarClientes();
+    mostrarToast('Acompanhamento do cliente salvo.', 'sucesso');
+}
+
+function atrelarOrcamentoCliente(leadId, orcamentoId) {
+    const servicos = getServicosClientes();
+    servicos[leadId] = {
+        ...normalizarServicoCliente(servicos[leadId] || {}),
+        orcamentoId: String(orcamentoId),
+        updatedAt: new Date().toISOString()
+    };
+    setServicosClientes(servicos);
+}
+
+function criarOrcamentoCliente(leadId) {
+    const lead = getLeads().find(item => item.id === leadId);
+    if (!lead) return;
+
+    salvarRascunhoServicoCliente(leadId);
+    orcamentoEditandoId = null;
+    clienteOrcamentoPendenteId = leadId;
+
+    document.getElementById('campo-cliente').value = lead.nome || '';
+    document.getElementById('campo-endereco').value = lead.cidade || '';
+    document.getElementById('campo-estado').value = lead.estado || '';
+    document.getElementById('campo-obs').value = lead.obs || '';
+
+    const campoObra = document.getElementById('campo-obra');
+    const servicos = normalizarServicoCliente(getServicosClientes()[leadId] || {});
+    const tipoSugerido = servicos.sistema || lead.projeto || '';
+    const opcao = Array.from(campoObra.options).find(opt =>
+        opt.textContent.toLowerCase() === tipoSugerido.toLowerCase()
+    );
+    campoObra.value = opcao ? opcao.value : (tipoSugerido ? 'Outro' : '');
+
+    const hoje = new Date();
+    const validade = new Date();
+    validade.setDate(hoje.getDate() + 30);
+    document.getElementById('campo-data').value = hoje.toISOString().split('T')[0];
+    document.getElementById('campo-validade').value = validade.toISOString().split('T')[0];
+    document.getElementById('display-rev').innerHTML = '';
+    atualizarNumeroDisplay();
+    mudarAba('orcamento', document.querySelector('.nav-tab[onclick*="orcamento"]'));
+    mostrarToast('Orçamento iniciado e vinculado ao cliente. Salve para confirmar o vínculo.', 'sucesso');
+}
+
+function criarContratoCliente(leadId) {
+    const lead = getLeads().find(item => item.id === leadId);
+    if (!lead) return;
+
+    const servico = salvarRascunhoServicoCliente(leadId);
+    const historico = getHistorico();
+    const orcamento = historico.find(item => String(item.id) === String(servico.orcamentoId));
+    const contratos = getContratosClientes();
+    const numero = contratos.filter(item => item.leadId === leadId).length + 1;
+
+    contratos.push({
+        id: Date.now(),
+        leadId,
+        cliente: lead.nome || '',
+        contratoNumero: numero,
+        orcamentoId: servico.orcamentoId || '',
+        orcamentoNumero: orcamento ? orcamento.numero : '',
+        sistema: servico.sistema || '',
+        webpages: servico.webpages || [],
+        dominiosLista: servico.dominiosLista || [],
+        planosLista: servico.planosLista || [],
+        valorOrcamento: orcamento ? (orcamento.totalComDesconto || orcamento.subtotal || 0) : 0,
+        status: 'Rascunho',
+        createdAt: new Date().toISOString()
+    });
+
+    setContratosClientes(contratos);
+    renderizarContratos();
+    verContratosCliente(leadId);
+    mostrarToast('Contrato criado em rascunho.', 'sucesso');
+}
+
+function verContratosCliente(leadId) {
+    const lead = getLeads().find(item => item.id === leadId);
+    const contratos = getContratosClientes().filter(item => item.leadId === leadId);
+    document.getElementById('contratos-modal-titulo').textContent = `Contratos - ${lead?.nome || 'Cliente'}`;
+    const cont = document.getElementById('contratos-modal-conteudo');
+
+    if (contratos.length === 0) {
+        cont.innerHTML = `<div class="hist-vazio contratos-vazio"><p>Nenhum contrato criado para este cliente.</p></div>`;
+    } else {
+        cont.innerHTML = `<div class="contratos-lista">${contratos.map(renderContratoCliente).join('')}</div>`;
+    }
+
+    document.getElementById('contratos-modal-overlay').classList.add('aberto');
+}
+
+function filtrarContratos(v) {
+    filtroContratos = v.toLowerCase();
+    renderizarContratos();
+}
+
+function renderizarContratos() {
+    const cont = document.getElementById('contratos-conteudo');
+    if (!cont) return;
+
+    const contratos = getContratosClientes()
+        .slice()
+        .reverse()
+        .filter(contrato => {
+            if (!filtroContratos) return true;
+            return (contrato.cliente || '').toLowerCase().includes(filtroContratos) ||
+                (contrato.sistema || '').toLowerCase().includes(filtroContratos) ||
+                String(contrato.orcamentoNumero || '').includes(filtroContratos) ||
+                String(contrato.contratoNumero || '').includes(filtroContratos);
+        });
+
+    if (contratos.length === 0) {
+        cont.innerHTML = `<div class="hist-vazio"><p>Nenhum contrato criado ainda.</p></div>`;
+        return;
+    }
+
+    cont.innerHTML = `<div class="contratos-grid">${contratos.map(renderContratoCliente).join('')}</div>`;
+}
+
+function renderContratoCliente(contrato) {
+    const criadoFmt = contrato.createdAt ? new Date(contrato.createdAt).toLocaleDateString('pt-BR') : '';
+    const planos = (contrato.planosLista || []).map(plano => plano.nome).filter(Boolean).join(', ');
+    const dominios = (contrato.dominiosLista || []).map(item => item.dominio).filter(Boolean).join(', ');
+
+    return `
+    <div class="contrato-item">
+      <div>
+        <div class="contrato-titulo">Contrato #${String(contrato.contratoNumero).padStart(2, '0')}</div>
+        ${contrato.cliente ? `<div class="contrato-cliente">${escapeHtml(contrato.cliente)}</div>` : ''}
+        <div class="contrato-meta">${contrato.orcamentoNumero ? `Orçamento #${String(contrato.orcamentoNumero).padStart(3, '0')} · ` : ''}${escapeHtml(contrato.status || 'Rascunho')}${criadoFmt ? ' · ' + escapeHtml(criadoFmt) : ''}</div>
+        ${contrato.sistema ? `<div class="contrato-meta">Sistema: ${escapeHtml(contrato.sistema)}</div>` : ''}
+        ${dominios ? `<div class="contrato-meta">Domínios: ${escapeHtml(dominios)}</div>` : ''}
+        ${planos ? `<div class="contrato-meta">Planos: ${escapeHtml(planos)}</div>` : ''}
+        ${contrato.valorOrcamento ? `<div class="contrato-valor">${formatarMoeda(contrato.valorOrcamento)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function fecharModalContratos() {
+    document.getElementById('contratos-modal-overlay').classList.remove('aberto');
 }
 
 // ===== PDF =====
@@ -805,6 +1783,20 @@ function formatarMoeda(v) {
     return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function escapeHtml(texto) {
+    return String(texto || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    }[ch]));
+}
+
+function escapeAttr(texto) {
+    return escapeHtml(texto).replace(/`/g, '&#096;');
+}
+
 function mostrarToast(msg, tipo = '') {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -826,4 +1818,12 @@ function fecharModal() {
 
 document.getElementById('modal-overlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) fecharModal();
+});
+
+document.getElementById('lead-modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) fecharModalLead();
+});
+
+document.getElementById('contratos-modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) fecharModalContratos();
 });

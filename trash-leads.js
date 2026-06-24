@@ -1,0 +1,1 @@
+window.TRASH_LEADS = [];

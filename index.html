@@ -16,13 +16,16 @@
 <body>
 
   <nav>
-    <div class="logo-nav">
-      <img src="Logo2.png" alt="Sanoj" class="nav-logo-img">
-      SANOJ <span>SISTEMAS</span>
-    </div>
     <div class="nav-tabs">
       <button class="nav-tab ativo" onclick="mudarAba('orcamento', this)">Novo Orçamento</button>
       <button class="nav-tab" onclick="mudarAba('historico', this)">Histórico</button>
+      <button class="nav-tab" onclick="mudarAba('leads', this)">Leads</button>
+      <button class="nav-tab" onclick="mudarAba('clientes', this)">Clientes</button>
+      <button class="nav-tab" onclick="mudarAba('contratos', this)">Contratos</button>
+    </div>
+    <div class="logo-nav">
+      <img src="Logo2.png" alt="Sanoj" class="nav-logo-img">
+      SANOJ <span>SISTEMAS</span>
     </div>
   </nav>
 
@@ -260,6 +263,171 @@
     </div>
   </div>
 
+  <!-- ===== ABA: LEADS ===== -->
+  <div id="aba-leads" class="aba">
+    <div class="leads-wrapper">
+      <div class="lead-topo">
+        <div>
+          <div class="hist-titulo">Leads</div>
+          <div class="leads-descricao">Cadastre leads, monitore status no kanban. Leads Qualificados vão para o menu Clientes. Leads excluídos vão para submenu Leads Excluídos. É possível buscar leads via submenu "Buscar Oportunidades".</div>
+        </div>
+        <div class="lead-topo-acoes">
+          <input type="text" class="hist-busca" placeholder="Buscar lead..." oninput="filtrarLeads(this.value)">
+          <button class="btn-primario" onclick="abrirModalLead()">Novo Lead</button>
+        </div>
+      </div>
+
+      <div class="lead-submenu">
+        <button class="lead-subtab ativo" onclick="mudarSubmenuLeads('kanban', this)">Kanban</button>
+        <button class="lead-subtab" onclick="mudarSubmenuLeads('oportunidades', this)">Buscar Oportunidades</button>
+        <button class="lead-subtab" onclick="mudarSubmenuLeads('excluidos', this)">Leads Excluídos</button>
+      </div>
+
+      <div id="lead-painel-kanban" class="lead-subpainel ativo">
+        <div id="leads-conteudo"></div>
+      </div>
+
+      <div id="lead-painel-oportunidades" class="lead-subpainel">
+        <div class="oportunidades-card">
+          <div class="oportunidades-form">
+            <div class="campo">
+              <label>Tipo de Estabelecimento</label>
+              <select id="opp-tipo">
+                <option value="todos">Todos os tipos</option>
+                <option>Clínica odontológica</option>
+                <option>Clínica médica</option>
+                <option>Loja de móveis</option>
+                <option>Arquiteto</option>
+                <option>Restaurante</option>
+                <option>Academia</option>
+                <option>Salão de beleza</option>
+                <option>Pet shop</option>
+                <option>Escritório contábil</option>
+                <option>Imobiliária</option>
+                <option>Loja de roupas</option>
+                <option>Oficina mecânica</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label>Localidade</label>
+              <input type="text" id="opp-localidade" placeholder="Ex.: Joinville, SC" value="Joinville, SC">
+            </div>
+            <div class="campo">
+              <label>Abertos a partir de</label>
+              <input type="date" id="opp-data-inicio">
+            </div>
+            <div class="campo">
+              <label>Abertos até</label>
+              <input type="date" id="opp-data-fim">
+            </div>
+          </div>
+          <div class="oportunidades-acoes">
+            <button class="btn-primario" onclick="gerarBuscasOportunidades()">Gerar Buscas</button>
+            <button class="btn-secundario" onclick="limparBuscasOportunidades()">Limpar</button>
+          </div>
+        </div>
+        <div id="oportunidades-resultados" class="oportunidades-resultados"></div>
+      </div>
+
+      <div id="lead-painel-excluidos" class="lead-subpainel">
+        <div class="trash-topo">
+          <button class="btn-secundario" onclick="exportarTrashLeadsJs()">Exportar trash-leads.js</button>
+        </div>
+        <div id="trash-leads-conteudo"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ABA: CLIENTES ===== -->
+  <div id="aba-clientes" class="aba">
+    <div class="clientes-wrapper">
+      <div class="lead-topo">
+        <div>
+          <div class="hist-titulo">Clientes</div>
+          <div class="clientes-descricao">Mova um lead para Qualificado no Kanban para acompanhar/monitorar os serviços e assinaturas.</div>
+        </div>
+        <input type="text" class="hist-busca" placeholder="Buscar cliente..." oninput="filtrarClientes(this.value)">
+      </div>
+      <div id="clientes-conteudo"></div>
+    </div>
+  </div>
+
+  <!-- ===== ABA: CONTRATOS ===== -->
+  <div id="aba-contratos" class="aba">
+    <div class="clientes-wrapper">
+      <div class="lead-topo">
+        <div>
+          <div class="hist-titulo">Contratos</div>
+          <div class="clientes-descricao">Visualize todos os contratos criados para clientes qualificados.</div>
+        </div>
+        <input type="text" class="hist-busca" placeholder="Buscar contrato..." oninput="filtrarContratos(this.value)">
+      </div>
+      <div id="contratos-conteudo"></div>
+    </div>
+  </div>
+
+  <!-- MODAL NOVO LEAD -->
+  <div class="modal-overlay" id="lead-modal-overlay">
+    <div class="modal lead-modal">
+      <div class="modal-header">
+        <h3>Novo Lead</h3>
+        <button class="modal-fechar" onclick="fecharModalLead()">×</button>
+      </div>
+      <div class="lead-form">
+        <div class="campo">
+          <label>Nome / Empresa</label>
+          <input type="text" id="lead-nome" placeholder="Nome do lead ou empresa">
+        </div>
+        <div class="campo">
+          <label>Contato</label>
+          <input type="tel" id="lead-contato" placeholder="Somente telefone ou WhatsApp" inputmode="tel">
+        </div>
+        <div class="campo">
+          <label>Email</label>
+          <input type="email" id="lead-email" placeholder="email@empresa.com">
+        </div>
+        <div class="campo">
+          <label>Projeto de Interesse</label>
+          <input type="text" id="lead-projeto" placeholder="Ex.: Sistema web, landing page">
+        </div>
+        <div class="campo">
+          <label>Ramo de Atuação</label>
+          <input type="text" id="lead-ramo" placeholder="Ex.: Comércio, indústria, serviços">
+        </div>
+        <div class="campo">
+          <label>Data Abordagem</label>
+          <input type="date" id="lead-data-abordagem">
+        </div>
+        <div class="campo">
+          <label>Cidade / Endereço</label>
+          <input type="text" id="lead-cidade" placeholder="Cidade, bairro ou remoto">
+        </div>
+        <div class="campo">
+          <label>Estado</label>
+          <input type="text" id="lead-estado" placeholder="UF">
+        </div>
+        <div class="campo">
+          <label>Status</label>
+          <select id="lead-status">
+            <option>Novo</option>
+            <option>Em contato</option>
+            <option>Proposta enviada</option>
+            <option>Qualificado</option>
+            <option>Recusado</option>
+          </select>
+        </div>
+        <div class="campo lead-campo-full">
+          <label>Observações</label>
+          <textarea id="lead-obs" placeholder="Necessidades, prazo, orçamento estimado..."></textarea>
+        </div>
+      </div>
+      <div class="modal-acoes">
+        <button class="btn-secundario" onclick="fecharModalLead()">Cancelar</button>
+        <button class="btn-primario" onclick="salvarLead()">Salvar Lead</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL CONFIRMAÇÃO -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal">
@@ -272,8 +440,23 @@
     </div>
   </div>
 
+  <!-- MODAL CONTRATOS -->
+  <div class="modal-overlay" id="contratos-modal-overlay">
+    <div class="modal contratos-modal">
+      <div class="modal-header">
+        <h3 id="contratos-modal-titulo">Contratos</h3>
+        <button class="modal-fechar" onclick="fecharModalContratos()">×</button>
+      </div>
+      <div id="contratos-modal-conteudo"></div>
+    </div>
+  </div>
+
   <!-- TOAST -->
   <div class="toast" id="toast"></div>
+  <script src="entry-leads.js"></script>
+  <script src="client-ative.js"></script>
+  <script src="trash-leads.js"></script>
+  <script src="contracts-ative.js"></script>
   <script src="script.js"></script>
 
 </body>
