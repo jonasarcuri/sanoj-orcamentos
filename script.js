@@ -22,18 +22,27 @@ document.addEventListener('DOMContentLoaded', () => {
     renderizarClientes();
     renderizarContratos();
     atualizarNumeroDisplay();
+    restaurarAbaAtiva();
 });
 
 // ===== ABAS =====
 function mudarAba(aba, btn) {
+    if (!document.getElementById('aba-' + aba)) return;
     document.querySelectorAll('.aba').forEach(a => a.classList.remove('ativo'));
     document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('ativo'));
     document.getElementById('aba-' + aba).classList.add('ativo');
-    btn.classList.add('ativo');
+    btn?.classList.add('ativo');
+    localStorage.setItem('sanoj_aba_ativa', aba);
     if (aba === 'historico') renderizarHistorico();
     if (aba === 'leads') renderizarLeads();
     if (aba === 'clientes') renderizarClientes();
     if (aba === 'contratos') renderizarContratos();
+}
+
+function restaurarAbaAtiva() {
+    const aba = localStorage.getItem('sanoj_aba_ativa') || 'orcamento';
+    const btn = document.querySelector(`.nav-tab[onclick*="${aba}"]`);
+    mudarAba(aba, btn);
 }
 
 // ===== NUMERO DO ORCAMENTO =====
